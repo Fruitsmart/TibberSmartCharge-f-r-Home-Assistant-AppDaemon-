@@ -1,63 +1,70 @@
 blueprint:
-  name: Tibber/GoodWe Smart Charge mit PV-Optimierung v.1.0.3
-  description: Steuert deinen GoodWe Batteriespeicher intelligent basierend auf dynamischen Tibber-Strompreisen. Der Akku wird automatisch in den günstigsten Stunden geladen und dient sonst dem Eigenverbrauch (kein Export ins Netz).
+  name: GoodWe & Tibber Smart Charge v.1.0.4
+  description: |
+    **Intelligente Batteriesteuerung für GoodWe Wechselrichter mit Tibber**
+    
+    Dieses Blueprint optimiert deinen Speicher vollautomatisch, um Stromkosten zu senken und den Eigenverbrauch zu maximieren.
 
-Dieser Blueprint erstellt automatisch die benötigten Helfer ('input_boolean' und 'input_number') und integriert sie.
+    **Funktionsweise:**
+    1. **Günstiges Laden:** Der Akku wird in den **X günstigsten Stunden** des Tages (basierend auf Tibber-Preisen für heute & morgen) aus dem Netz geladen (Modus: Backup).
+    2. **Intelligente Zurückhaltung:** Wenn für die günstigen Stunden genug **Solarstrom vorhergesagt** ist (über optionalen Forecast-Sensor) oder aktuell die Sonne scheint, wird das Netzladen übersprungen, um kostenlosen Solarstrom zu nutzen.
+    3. **Export-Management:** Im Eigenverbrauchsmodus (General) wird die **Exportsperre** automatisch aktiviert, wenn der Akku entladen wird (um Netzbezug/Verluste zu minimieren), und deaktiviert, wenn der Akku voll ist (um Überschuss einzuspeisen).
 
-Funktionen:
+    **Voraussetzungen:**
+    * **HACS GoodWe Integration:** Für die Steuerung von Modus & Exportsperre.
+    * **Tibber Daten-Sensor:** Ein manuell angelegter Template/REST-Sensor, der die Attribute `today` und `tomorrow` liefert (siehe Dokumentation/Blogbeitrag).
+    * **(Optional) Solar Forecast:** Ein Sensor von `ha-solar-forecast-ml` o.ä. für noch präzisere Entscheidungen.
 
-Erkennt die günstigsten Stunden aus Tibber-Preisen für HEUTE und MORGEN.
-Nutzt den "Backup"-Modus zum Laden und den "General"-Modus für Eigenverbrauch.
-Aktiviert den GoodWe "Fast Charging Switch" während des Ladens (um die volle Ladegeschwindigkeit zu gewährleisten).
-Berücksichtigt die benötigte Ladedauer des Akkus (Konfiguration über den generierten Helfer 'Anzahl Günstigste Ladestunden').
-Voraussetzungen:
-
-HACS GoodWe Integration (für Steuerung des Arbeitsmodus und Fast Charging Switch).
-Ein funktionierender Tibber REST-Sensor (sensor.tibber_preise_prognose), der die Attribute 'today' und 'tomorrow' liefert.
   domain: automation
   input:
     tibber_price_data_sensor:
       name: Tibber Preisdaten Sensor
-      description: Sensor, der stündliche Tibber-Preisinformationen liefert (z.B. sensor.tibber_price_data aus benutzerdefiniertem YAML).
+      description: >
+        Der Sensor, der die stündlichen Preise als Attribute 'today' und 'tomorrow' enthält.
+        (Meistens ein manuell erstellter REST-Sensor in der configuration.yaml).
       selector:
         entity:
           domain: sensor
     pv_power_sensor:
-      name: Aktueller PV Leistungs Sensor (W)
-      description: Sensor, der die aktuelle PV-Leistung deines GoodWe Wechselrichters anzeigt.
+      name: Aktuelle PV-Leistung (W)
+      description: Sensor für die aktuelle Erzeugung des Wechselrichters (z.B. sensor.goodwe_pv_power).
       selector:
         entity:
           domain: sensor
           device_class: power
     battery_soc_sensor:
-      name: Batterie SOC Sensor (%)
-      description: Sensor, der den aktuellen Ladezustand (SOC) deiner GoodWe Batterie anzeigt.
+      name: Batterie Ladestand (%)
+      description: Sensor für den aktuellen SOC der Batterie (z.B. sensor.goodwe_battery_soc).
       selector:
         entity:
           domain: sensor
           device_class: battery
     goodwe_work_mode_selector:
-      name: GoodWe Betriebsmodus Selector
-      description: Die 'select'-Entität deines GoodWe Wechselrichters, mit der der Betriebsmodus geändert werden kann (z.B. select.goodwe_work_mode).
+      name: GoodWe Betriebsmodus (Select)
+      description: Die Entität zum Umschalten des Modus (z.B. select.goodwe_work_mode). Muss Optionen wie 'General' und 'Backup' haben.
       selector:
         entity:
           domain: select
     goodwe_export_limit_switch:
-      name: GoodWe Exportsperre Schalter
-      description: Die 'switch'-Entität deines GoodWe Wechselrichters, mit der die Exportsperre aktiviert/deaktiviert werden kann (z.B. switch.goodwe_export_limit).
+      name: GoodWe Exportsperre (Switch)
+      description: Der Schalter zum Ein-/Ausschalten der Einspeisebegrenzung (z.B. switch.goodwe_export_limit).
       selector:
         entity:
           domain: switch
     solar_forecast_sensor:
-      name: Solar Prognose Sensor (Optional, W)
-      description: Ein optionaler Sensor, der eine zukünftige Solarleistungsprognose liefert (z.B. von ha-solar-forecast-ml).
+      name: Solar Prognose Sensor (Optional)
+      description: >
+        Ein Sensor, der die erwartete Solarleistung in Watt liefert. 
+        Wenn nicht vorhanden, wird nur die aktuelle PV-Leistung berücksichtigt.
       default: null
       selector:
         entity:
           domain: sensor
     charge_hours:
-      name: Anzahl der günstigsten Ladestunden
-      description: Wie viele der günstigsten Tibber-Stunden zum Laden genutzt werden sollen.
+      name: Ladedauer (Stunden)
+      description: >
+        Anzahl der günstigsten Stunden, in denen geladen werden soll.
+        Faustformel: Batteriekapazität (kWh) / Ladeleistung (kW) = Stunden (aufgerundet).
       default: 3
       selector:
         number:
@@ -65,24 +72,28 @@ Ein funktionierender Tibber REST-Sensor (sensor.tibber_preise_prognose), der die
           max: 8
           unit_of_measurement: "Stunden"
     pv_threshold_low:
-      name: PV Schwellenwert Niedrig (W)
-      description: Unterhalb dieser PV-Leistung wird die Exportsperre bei Bedarf aktiviert oder das Laden aus dem Netz begonnen (z.B. 50W).
+      name: Grenze: Wenig PV (W)
+      description: >
+        Unterhalb dieses Wertes gilt: "Keine nennenswerte Sonne".
+        Wird genutzt, um Netzladen zu erlauben oder Exportsperre zu aktivieren.
       default: 50
       selector:
         number:
           min: 0
           unit_of_measurement: "W"
     pv_threshold_high:
-      name: PV Schwellenwert Hoch (W)
-      description: Oberhalb dieser PV-Leistung wird die Exportsperre bei vollem Akku deaktiviert (z.B. 50W).
+      name: Grenze: Viel PV (W)
+      description: >
+        Oberhalb dieses Wertes gilt: "Viel Überschuss".
+        Wird genutzt, um die Exportsperre bei vollem Akku freizugeben.
       default: 50
       selector:
         number:
           min: 0
           unit_of_measurement: "W"
     soc_full_threshold:
-      name: Batterie SOC Voller Schwellenwert (%)
-      description: Batterie Ladezustand (SOC) in %, ab dem die Batterie als "voll" gilt (z.B. 99%).
+      name: Batterie "Voll" Grenze (%)
+      description: Ab diesem Ladestand gilt der Akku als voll und das Netzladen stoppt.
       default: 99
       selector:
         number:
@@ -90,13 +101,13 @@ Ein funktionierender Tibber REST-Sensor (sensor.tibber_preise_prognose), der die
           max: 100
           unit_of_measurement: "%"
 
-mode: single # Verhindert, dass die Automation mehrfach gleichzeitig läuft
-max_exceeded: silent # Ignoriert, wenn die Automation zu schnell ausgelöst wird
+mode: single
+max_exceeded: silent
 
 trigger:
-  - platform: time_pattern # Jede Minute prüfen
+  - platform: time_pattern
     minutes: "*"
-  - platform: homeassistant # Neu bewerten, wenn sich relevante Sensoren ändern
+  - platform: homeassistant
     event_type: state_changed
     entity_id:
       - !input pv_power_sensor
@@ -104,44 +115,43 @@ trigger:
       - !input goodwe_work_mode_selector
       - !input goodwe_export_limit_switch
       - !input solar_forecast_sensor
-      - !input tibber_price_data_sensor # Auch triggern, wenn Tibber-Daten aktualisiert werden
+      - !input tibber_price_data_sensor
 
 variables:
-  # Eingabe-Variablen
+  # Inputs mappen
   v_tibber_sensor: !input tibber_price_data_sensor
   v_pv_power_sensor: !input pv_power_sensor
   v_battery_soc_sensor: !input battery_soc_sensor
   v_work_mode_selector: !input goodwe_work_mode_selector
   v_export_limit_switch: !input goodwe_export_limit_switch
   v_solar_forecast_sensor: !input solar_forecast_sensor
-  v_charge_hours: "{{ iif(states(v_charge_hours) is not none and states(v_charge_hours) | is_number, states(v_charge_hours) | int, 3) }}"
-  v_pv_threshold_low: "{{ iif(states(v_pv_threshold_low) is not none and states(v_pv_threshold_low) | is_number, states(v_pv_threshold_low) | int, 50) }}"
-  v_pv_threshold_high: "{{ iif(states(v_pv_threshold_high) is not none and states(v_pv_threshold_high) | is_number, states(v_pv_threshold_high) | int, 50) }}"
-  v_soc_full_threshold: "{{ iif(states(v_soc_full_threshold) is not none and states(v_soc_full_threshold) | is_number, states(v_soc_full_threshold) | int, 99) }}"
   
-  # Aktuelle Zustände
+  # Einstellungen holen (mit Fallback)
+  v_charge_hours: "{{ iif(states(v_charge_hours) is defined and states(v_charge_hours) | is_number, states(v_charge_hours) | int, 3) }}"
+  v_pv_threshold_low: "{{ iif(states(v_pv_threshold_low) is defined and states(v_pv_threshold_low) | is_number, states(v_pv_threshold_low) | int, 50) }}"
+  v_pv_threshold_high: "{{ iif(states(v_pv_threshold_high) is defined and states(v_pv_threshold_high) | is_number, states(v_pv_threshold_high) | int, 50) }}"
+  v_soc_full_threshold: "{{ iif(states(v_soc_full_threshold) is defined and states(v_soc_full_threshold) | is_number, states(v_soc_full_threshold) | int, 99) }}"
+  
+  # Aktuelle Werte
   pv_leistung: "{{ states(v_pv_power_sensor) | float(0) }}"
   batterie_soc: "{{ states(v_battery_soc_sensor) | float(100) }}"
   aktueller_modus: "{{ states(v_work_mode_selector) }}"
   export_limit_active: "{{ is_state(v_export_limit_switch, 'on') }}"
   
-  # Wert des Solar-Prognose-Sensors
+  # Solar Prognose Logik
   solar_forecast_value: >
     {% set forecast_state = states(v_solar_forecast_sensor) %}
     {% if forecast_state is not none and forecast_state not in ['unavailable', 'unknown', 'none', 'null', ''] %}
       {{ forecast_state | float(0) }}
     {% else %}
-      {{ 0 }} # Standardwert 0, wenn Sensor nicht verfügbar/konfiguriert oder Wert ungültig
+      {{ 0 }}
     {% endif %}
 
-  # Tibber Preisverarbeitung (nur einmal pro Minute, um Neuberechnungen zu vermeiden)
+  # Tibber Preis Logik
   current_time: "{{ now() }}"
-  current_hour_utc: "{{ now().replace(minute=0, second=0, microsecond=0) }}"
-  # Annahme: tibber_price_data_sensor hat ein Attribut mit der Struktur 'today' und 'tomorrow'
   tibber_raw_prices: "{{ state_attr(v_tibber_sensor, 'home').currentSubscription.priceInfo if state_attr(v_tibber_sensor, 'home') is not none else {} }}"
 
-
-  # Kombinierte Preise für heute und morgen
+  # Preise kombinieren (Heute + Morgen)
   combined_prices_with_time: >
     {% set prices = [] %}
     {% set today_prices = tibber_raw_prices.today | default([]) %}
@@ -149,10 +159,9 @@ variables:
     
     {% for i in range(24) %}
       {% set price_time = current_time.replace(hour=i, minute=0, second=0, microsecond=0) %}
-      {% if price_time >= current_time.replace(minute=0, second=0, microsecond=0) %} # Nur zukünftige oder aktuelle Stunden
+      {% if price_time >= current_time.replace(minute=0, second=0, microsecond=0) %}
         {% if today_prices is not none and i < today_prices | length and today_prices[i].total is not none %}
-          {% set price_data = today_prices[i].total %}
-          {% set success = prices.append({'time': price_time, 'price': price_data}) %}
+          {% set success = prices.append({'time': price_time, 'price': today_prices[i].total}) %}
         {% endif %}
       {% endif %}
     {% endfor %}
@@ -161,19 +170,18 @@ variables:
     {% for i in range(24) %}
       {% set price_time = next_day.replace(hour=i, minute=0, second=0, microsecond=0) %}
       {% if tomorrow_prices is not none and i < tomorrow_prices | length and tomorrow_prices[i].total is not none %}
-        {% set price_data = tomorrow_prices[i].total %}
-        {% set success = prices.append({'time': price_time, 'price': price_data}) %}
+        {% set success = prices.append({'time': price_time, 'price': tomorrow_prices[i].total}) %}
       {% endif %}
     {% endfor %}
     {{ prices }}
 
-  # Die N günstigsten Stunden ermitteln
+  # Die günstigsten Stunden ermitteln
   cheapest_hours_info: >
     {% set sorted_prices = combined_prices_with_time | sort(attribute='price') %}
     {% set num_to_select = [v_charge_hours | int(3), sorted_prices | length] | min %}
     {{ sorted_prices[:num_to_select] }}
 
-  # Prüfen, ob die aktuelle Stunde eine der günstigsten Ladestunden ist
+  # Ist JETZT eine günstige Stunde?
   is_current_hour_cheap: >
     {% set current_hour_start = current_time.replace(minute=0, second=0, microsecond=0) %}
     {% set is_cheap = false %}
@@ -187,33 +195,36 @@ variables:
 
 action:
   - choose:
-      # --- Szenario 1: Laden aus dem Netz (Backup-Modus) ---
+      # --- SZENARIO 1: LADEN (Backup-Modus) ---
+      # Bedingungen: Günstige Stunde UND Akku nicht voll UND (kein Forecast ODER Forecast niedrig)
       - conditions:
-          - "{{ is_current_hour_cheap }}" # Ist die aktuelle Stunde eine der günstigsten?
-          - "{{ batterie_soc < v_soc_full_threshold }}" # Ist der Akku noch nicht "voll"?
-          - "{{ aktueller_modus != 'backup' }}" # Nur schalten, wenn nicht bereits im Backup-Modus
-          - condition: or # NEUE LOGIK: Laden, wenn keine Prognose ODER Prognose niedrig ODER aktuelle PV niedrig
+          - "{{ is_current_hour_cheap }}"
+          - "{{ batterie_soc < v_soc_full_threshold }}"
+          - "{{ aktueller_modus != 'backup' }}"
+          - condition: or
             conditions:
-              - "{{ v_solar_forecast_sensor == 'none' }}" # Kein Solar Forecast Sensor konfiguriert
-              - "{{ solar_forecast_value <= v_pv_threshold_low | float(50) }}" # Oder Solar Forecast ist niedrig
-              - "{{ pv_leistung <= v_pv_threshold_low | float(50) }}" # Fallback auf aktuelle PV, wenn kein Forecast oder Forecast niedrig
+              - "{{ v_solar_forecast_sensor == 'none' }}"
+              - "{{ solar_forecast_value <= v_pv_threshold_low | float(50) }}"
+              - "{{ pv_leistung <= v_pv_threshold_low | float(50) }}"
         sequence:
           - service: select.select_option
             target:
               entity_id: !input goodwe_work_mode_selector
             data:
               option: "backup"
+          # Beim Laden aus Netz muss Exportsperre AUS sein, um Konflikte zu vermeiden
           - if:
-              - "{{ export_limit_active }}" # Wenn Exportsperre aktiv ist, deaktiviere sie beim Laden aus dem Netz
+              - "{{ export_limit_active }}"
             then:
               - service: switch.turn_off
                 target:
                   entity_id: !input goodwe_export_limit_switch
     
-      # --- Szenario 2: Normaler Betrieb (General-Modus) ---
+      # --- SZENARIO 2: NORMALBETRIEB (General-Modus) ---
+      # Bedingungen: Nicht günstig ODER Akku voll
       - conditions:
-          - "{{ not is_current_hour_cheap }}" # Aktuelle Stunde ist nicht günstig zum Laden
-          - "{{ aktueller_modus != 'general' }}" # Und der Wechselrichter ist nicht bereits im General-Modus
+          - "{{ not is_current_hour_cheap }}"
+          - "{{ aktueller_modus != 'general' }}"
         sequence:
           - service: select.select_option
             target:
@@ -221,23 +232,26 @@ action:
             data:
               option: "general"
     
-  - choose: # Separate "choose" für die Exportsperre, um unabhängig zu reagieren
-      # --- Szenario 3: Exportsperre aktivieren (im General-Modus) ---
+  # --- UNABHÄNGIGE STEUERUNG DER EXPORTSPERRE ---
+  - choose: 
+      # A) Sperre AKTIVIEREN
+      # Wenn: General-Modus UND (Akku nicht voll UND wenig Sonne) UND Sperre ist noch aus
       - conditions:
-          - "{{ aktueller_modus == 'general' }}" # Nur im General-Modus relevant
-          - "{{ not export_limit_active }}" # Nur aktivieren, wenn nicht bereits aktiv
-          - "{{ batterie_soc < v_soc_full_threshold }}" # Akku ist nicht voll
-          - "{{ pv_leistung <= v_pv_threshold_low | float(50) }}" # Und die aktuelle PV-Leistung ist gering
+          - "{{ aktueller_modus == 'general' }}"
+          - "{{ not export_limit_active }}"
+          - "{{ batterie_soc < v_soc_full_threshold }}"
+          - "{{ pv_leistung <= v_pv_threshold_low | float(50) }}"
         sequence:
           - service: switch.turn_on
             target:
               entity_id: !input goodwe_export_limit_switch
 
-      # --- Szenario 4: Exportsperre deaktivieren (im General-Modus) ---
+      # B) Sperre DEAKTIVIEREN
+      # Wenn: General-Modus UND (Akku voll ODER viel Sonne) UND Sperre ist noch an
       - conditions:
-          - "{{ aktueller_modus == 'general' }}" # Nur im General-Modus relevant
-          - "{{ export_limit_active }}" # Nur deaktivieren, wenn bereits aktiv
-          - condition: or # Deaktivieren, wenn Akku voll ODER aktuelle PV-Leistung hoch
+          - "{{ aktueller_modus == 'general' }}"
+          - "{{ export_limit_active }}"
+          - condition: or
             conditions:
               - "{{ batterie_soc >= v_soc_full_threshold }}"
               - "{{ pv_leistung > v_pv_threshold_high | float(50) }}"
