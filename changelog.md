@@ -1,7 +1,13 @@
 
 ### **Changelog: GoodWe & Tibber Smart Charge Blueprint**
 
-Version 5.4 (Aktuell)
+Version 5.5 (Aktuell)
+
+Fehlerbehebung:
+
+Behebung eines YAML-Parsing-Fehlers (expected <block end>, but found '?') der durch eine inkorrekte Strukturierung von choose-Blöcken innerhalb der action-Sektion verursacht wurde. Die drei Hauptlogik-Blöcke (Helfer-Update, Lade-/Modussteuerung, Exportsperre) sind nun als separate, sequenzielle Schritte auf der obersten Ebene der action-Liste definiert, was die YAML-Konformität und Lesbarkeit verbessert.
+
+Version 5.4
 
 Fehlerbehebung:
 
