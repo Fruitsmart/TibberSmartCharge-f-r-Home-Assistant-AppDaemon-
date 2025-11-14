@@ -1,216 +1,240 @@
 blueprint:
-  name: GoodWe & Tibber Smart Charge (v6.1 Final Fix - TypeError)
+  name: GoodWe & Tibber Smart Charge (Variablen-gesteuert)
   description: |
     **Intelligente Batteriesteuerung für GoodWe Wechselrichter mit Tibber**
     
-    Dieses Blueprint optimiert deinen Speicher vollautomatisch, um Stromkosten zu senken und den Eigenverbrauch zu maximieren.
-
-    **Funktionsweise:**
-    1. **Günstiges Laden:** Der Akku wird in den **X günstigsten Stunden** des Tages (basierend auf Tibber-Preisen für heute & morgen) aus dem Netz geladen (Modus: Backup).
-    2. **Intelligente Zurückhaltung:** Wenn für die günstigen Stunden genug **Solarstrom vorhergesagt** ist (über optionalen Forecast-Sensor) oder aktuell die Sonne scheint, wird das Netzladen übersprungen.
-    3. **Export-Management:** Im Eigenverbrauchsmodus (General) wird die **Exportsperre** automatisch aktiviert, wenn der Akku entladen wird, und deaktiviert, wenn der Akku voll ist.
-
-    **Status-Helfer:**
-    Der Blueprint benötigt zwei existierende Helfer:
-    * **Text-Helfer (`input_text`)**: Zeigt die Uhrzeiten der günstigsten Ladestunden an.
-    * **Toggle-Helfer (`input_boolean`)**: Zeigt an, ob der Akku aktuell aus dem Netz geladen wird.
-
+    Diese Automation optimiert deinen GoodWe Batteriespeicher, um Stromkosten zu senken und den Eigenverbrauch zu maximieren.
+    Sie berücksichtigt Tibber-Strompreise, PV-Leistung, Batteriestand und optional eine Solarprognose, um den Wechselrichter-Modus und die Exportsperre intelligent zu steuern.
+    
     **Voraussetzungen:**
-    * **HACS GoodWe Integration**
-    * **Tibber Daten-Sensor** (manuell in configuration.yaml erstellt, siehe Anleitung)
+    - GoodWe Integration mit den Entitäten für Betriebsmodus (`select.inverter_operation_mode`) und Exportsperre (`switch.goodwe_grid_export_limit_switch`).
+    - Tibber Integration mit einem Preissensor (`sensor.electricity_price_...`) der das Attribut `tibber_data` enthält.
+    - Sensor für die aktuelle PV-Leistung (`sensor.pv_power`).
+    - Sensor für den aktuellen Batterieladestand (SOC) (`sensor.battery_state_of_charge`).
+    - Optional: Ein Sensor für die Solarprognose (z.B. Home Assistant Solar Forecast).
+    - Erforderlich: Zwei Helfer (input_text und input_boolean) wie unten beschrieben.
+    
+    **Wichtiger Hinweis zur Erstellung der Helfer:**
+    Bitte erstelle diese Helfer VOR der Verwendung des Blueprints:
+    1.  **Text Helfer für günstigste Stunden:**
+        - Typ: Text
+        - Name: z.B. `Günstigste Ladestunden`
+        - Entitäts-ID: z.B. `input_text.gunstigsten_ladestunden`
+    2.  **Boolean Helfer für Ladevorgang aus Netz:**
+        - Typ: Umschalter
+        - Name: z.B. `Akku lädt aus Netz`
+        - Entitäts-ID: z.B. `input_boolean.akku_laedt_aus_netz`
 
   domain: automation
   input:
-    tibber_price_data_sensor:
-      name: Tibber Preisdaten Sensor (Verarbeitet)
-      description: >
-        Der vorbereitete Template-Sensor, der die Tibber-Preisdaten als Attribut 'tibber_data' enthält
-        (z.B. sensor.tibber_processed_prices aus der configuration.yaml).
+    tibber_price_sensor:
+      name: Tibber Preissensor
+      description: Dein Tibber Stundensatz-Sensor (muss 'tibber_data' Attribut haben).
       selector:
         entity:
           domain: sensor
+          integration: tibber
+          multiple: false
     pv_power_sensor:
-      name: Aktuelle PV-Leistung (W)
-      description: Sensor für die aktuelle Erzeugung des Wechselrichters.
+      name: PV-Leistungssensor
+      description: Sensor, der die aktuelle PV-Produktion in Watt anzeigt.
       selector:
         entity:
           domain: sensor
           device_class: power
     battery_soc_sensor:
-      name: Batterie Ladestand (%)
-      description: Sensor für den aktuellen SOC der Batterie.
+      name: Batterie SOC Sensor
+      description: Sensor, der den aktuellen Ladestand der Batterie (State of Charge in %) anzeigt.
       selector:
         entity:
           domain: sensor
           device_class: battery
     goodwe_work_mode_selector:
-      name: GoodWe Betriebsmodus Selector
-      description: >
-        Die Entität zum Umschalten des Modus (z.B. select.goodwe_work_mode).
-        Muss Optionen wie 'General' und 'Backup' haben.
+      name: GoodWe Betriebsmodus-Selektor
+      description: Der "Inverter Operation Mode" Selektor deines GoodWe Wechselrichters.
       selector:
         entity:
           domain: select
+          integration: goodwe
+          multiple: false
     goodwe_export_limit_switch:
-      name: GoodWe Exportsperre Schalter
-      description: >
-        Der Schalter zum Ein-/Ausschalten der Einspeisebegrenzung.
+      name: GoodWe Grid Export Limit Schalter
+      description: Der Schalter zum Aktivieren/Deaktivieren der Netzeinspeisungsbegrenzung deines GoodWe Wechselrichters.
       selector:
         entity:
           domain: switch
+          integration: goodwe
+          multiple: false
+    cheapest_hours_text_helper:
+      name: Helfer für günstigste Ladestunden (input_text)
+      description: Ein input_text Helfer, in den die Uhrzeiten der günstigsten Stunden geschrieben werden.
+      selector:
+        entity:
+          domain: input_text
+    charging_from_grid_toggle_helper:
+      name: Helfer für Ladevorgang aus Netz (input_boolean)
+      description: Ein input_boolean Helfer, der anzeigt, ob der Akku gerade aus dem Netz lädt (Modus 'backup').
+      selector:
+        entity:
+          domain: input_boolean
+    
+    # Optional Inputs mit Defaults
     solar_forecast_sensor:
-      name: Solar Prognose Sensor (Optional)
-      description: >
-        Ein Sensor, der die erwartete Solarleistung in Watt liefert.
-      default: null
+      name: (Optional) Solarprognose-Sensor
+      description: Ein Sensor, der die prognostizierte Solarleistung anzeigt (z.B. von Home Assistant Solar Forecast). Kann leer gelassen werden, wenn nicht vorhanden.
+      default: none
       selector:
         entity:
           domain: sensor
+          # Hier keine device_class, da Forecast-Sensoren variieren können
+          multiple: false
     charge_hours:
-      name: Ladedauer in Stunden
-      description: Anzahl der günstigsten Stunden, in denen geladen werden soll.
+      name: Anzahl der günstigsten Ladestunden
+      description: Wie viele der günstigsten Stunden Tibbers zum Laden genutzt werden sollen.
       default: 3
       selector:
         number:
           min: 1
-          max: 8
-          unit_of_measurement: "Stunden"
+          max: 10
+          step: 1
+          mode: slider
     pv_threshold_low:
-      name: PV-Schwellenwert Niedrig (W)
-      description: Unterhalb dieses Wertes gilt - Keine nennenswerte Sonne.
+      name: PV-Leistungsschwelle (Niedrig)
+      description: PV-Leistung in Watt, unterhalb derer das Netzladen in Betracht gezogen wird oder die Exportsperre aktiv bleibt.
       default: 50
       selector:
         number:
           min: 0
-          unit_of_measurement: "W"
+          max: 500
+          step: 10
+          unit_of_measurement: W
     pv_threshold_high:
-      name: PV-Schwellenwert Hoch (W)
-      description: Oberhalb dieses Wertes gilt - Viel Überschuss.
-      default: 50
+      name: PV-Leistungsschwelle (Hoch)
+      description: PV-Leistung in Watt, oberhalb derer die Exportsperre deaktiviert wird.
+      default: 2000
       selector:
         number:
-          min: 0
-          unit_of_measurement: "W"
+          min: 500
+          max: 10000
+          step: 100
+          unit_of_measurement: W
     soc_full_threshold:
-      name: Batterie Voll-Schwellenwert (%)
-      description: Ab diesem Ladestand gilt der Akku als voll.
+      name: SOC Voll-Schwelle (%)
+      description: Ab welchem Batterieladestand (SOC) der Akku als "voll" betrachtet wird (Netzladen stoppen, Exportsperre deaktivieren).
       default: 99
       selector:
         number:
-          min: 1
+          min: 90
           max: 100
+          step: 1
           unit_of_measurement: "%"
-    helper_cheapest_hours_text:
-      name: Text-Helfer Günstige Stunden
-      description: >
-        Ein input_text-Helfer, der die günstigsten Ladestunden anzeigt.
-        Du musst diesen Helfer vorher in Home Assistant erstellen (Einstellungen > Geräte & Dienste > Helfer).
-      selector:
-        entity:
-          domain: input_text
-    helper_charging_from_grid_toggle:
-      name: Toggle-Helfer Akku lädt aus Netz
-      description: >
-        Ein input_boolean-Helfer, der anzeigt, ob der Akku gerade aus dem Netz geladen wird.
-        Du musst diesen Helfer vorher in Home Assistant erstellen (Einstellungen > Geräte & Dienste > Helfer).
-      selector:
-        entity:
-          domain: input_boolean
 
-mode: single
-max_exceeded: silent
+mode: queued # Wichtig, damit nicht mehrere Instanzen gleichzeitig laufen
 
 trigger:
   - platform: time_pattern
-    minutes: "*"
+    minutes: "0" # Löst jede Stunde zur 0. Minute aus
+
   - platform: state
-    entity_id:
-      - !input pv_power_sensor
-      - !input battery_soc_sensor
-      - !input goodwe_work_mode_selector
-      - !input goodwe_export_limit_switch
-      - !input solar_forecast_sensor
-      - !input tibber_price_data_sensor
+    entity_id: !input battery_soc_sensor
+    for: "00:00:30"
 
-variables:
-  v_tibber_sensor: !input tibber_price_data_sensor
-  v_pv_power_sensor: !input pv_power_sensor
-  v_battery_soc_sensor: !input battery_soc_sensor
-  v_work_mode_selector: !input goodwe_work_mode_selector
-  v_export_limit_switch: !input goodwe_export_limit_switch
-  v_solar_forecast_sensor: !input solar_forecast_sensor
-  v_helper_cheapest_hours_text: !input helper_cheapest_hours_text
-  v_helper_charging_from_grid_toggle: !input helper_charging_from_grid_toggle
-  
-  pv_leistung: "{{ states(v_pv_power_sensor) | float(0) }}"
-  batterie_soc: "{{ states(v_battery_soc_sensor) | float(100) }}"
-  aktueller_modus: "{{ states(v_work_mode_selector) }}"
-  export_limit_active: "{{ is_state(v_export_limit_switch, 'on') }}"
-  
-  solar_forecast_value: >
-    {% set forecast_state = states(v_solar_forecast_sensor) %}
-    {% if forecast_state is not none and forecast_state not in ['unavailable', 'unknown', 'none', 'null', ''] %}
-      {{ forecast_state | float(0) }}
-    {% else %}
-      {{ 0 }}
-    {% endif %}
+  - platform: state
+    entity_id: !input goodwe_work_mode_selector
 
-  current_time: "{{ now() }}"
-  tibber_raw_prices: "{{ state_attr(v_tibber_sensor, 'tibber_data') | default({'today': [], 'tomorrow': []}) }}"
+  - platform: state
+    entity_id: !input goodwe_export_limit_switch
 
-  combined_prices_with_time: >
-    {% set prices = [] %}
-    {% set today_prices = tibber_raw_prices.today | default([]) %}
-    {% set tomorrow_prices = tibber_raw_prices.tomorrow | default([]) %}
-    
-    {% for i in range(24) %}
-      {% set price_time = current_time.replace(hour=i, minute=0, second=0) %} {# REMOVED microsecond=0 #}
-      {% if price_time >= current_time.replace(minute=0, second=0) %} {# REMOVED microsecond=0 #}
-        {% if today_prices is not none and i < today_prices | length and today_prices[i].total is not none %}
-          {% set success = prices.append({'time': price_time, 'price': today_prices[i].total}) %}
-        {% endif %}
-      {% endif %}
-    {% endfor %}
+  - platform: state
+    entity_id: !input tibber_price_sensor
 
-    {% set next_day = current_time + timedelta(days=1) %}
-    {% for i in range(24) %}
-      {% set price_time = next_day.replace(hour=i, minute=0, second=0) %} {# REMOVED microsecond=0 #}
-      {% if tomorrow_prices is not none and i < tomorrow_prices | length and tomorrow_prices[i].total is not none %}
-        {% set success = prices.append({'time': price_time, 'price': tomorrow_prices[i].total}) %}
-      {% endif %}
-    {% endfor %}
-    {{ prices }}
+  - platform: state
+    entity_id: !input pv_power_sensor
+    for: "00:00:30"
 
-  cheapest_hours_info: >
-    {% set sorted_prices = combined_prices_with_time | sort(attribute='price') %}
-    {% set num_to_select = [ (input_number(input('charge_hours')) | int(3)), sorted_prices | length] | min %} 
-    {{ sorted_prices[:num_to_select] }}
-
-  is_current_hour_cheap: >
-    {% set current_hour_start = current_time.replace(minute=0, second=0) %} {# REMOVED microsecond=0 #}
-    {% set is_cheap = false %}
-    {% for hour_info in cheapest_hours_info %}
-      {% if hour_info.time == current_hour_start %}
-        {% set is_cheap = true %}
-        {% break %}
-      {% endif %}
-    {% endfor %}
-    {{ is_cheap }}
-
-  formatted_cheapest_hours: >
-    {% set hours_list = [] %}
-    {% for hour_info in cheapest_hours_info %}
-      {% set success = hours_list.append(hour_info.time.strftime('%H:%M')) %}
-    {% endfor %}
-    {{ hours_list | join(', ') if hours_list | length > 0 else 'N/A' }}
+  - platform: state
+    entity_id: !input solar_forecast_sensor # Dieser Trigger wird ignoriert, wenn Input 'none' ist
 
 action:
+  - variables:
+      v_tibber_sensor: !input tibber_price_sensor
+      v_pv_power_sensor: !input pv_power_sensor
+      v_battery_soc_sensor: !input battery_soc_sensor
+      v_work_mode_selector: !input goodwe_work_mode_selector
+      v_export_limit_switch: !input goodwe_export_limit_switch
+      v_solar_forecast_sensor: !input solar_forecast_sensor
+      v_helper_cheapest_hours_text: !input cheapest_hours_text_helper
+      v_helper_charging_from_grid_toggle: !input charging_from_grid_toggle_helper
+
+      charge_hours_input: !input charge_hours
+      pv_threshold_low_input: !input pv_threshold_low
+      pv_threshold_high_input: !input pv_threshold_high
+      soc_full_threshold_input: !input soc_full_threshold
+
+      pv_leistung: "{{ states(v_pv_power_sensor) | float(0) }}"
+      batterie_soc: "{{ states(v_battery_soc_sensor) | float(100) }}"
+      aktueller_modus: "{{ states(v_work_mode_selector) }}"
+      export_limit_active: "{{ is_state(v_export_limit_switch, 'on') }}"
+      
+      solar_forecast_value: >
+        {% set forecast_state = states(v_solar_forecast_sensor) %}
+        {{ forecast_state | float(0) if forecast_state is not none and forecast_state not in ['unavailable', 'unknown', 'none', 'null', ''] else 0 }}
+
+      current_dt_now: "{{ now() }}"
+      current_hour_int: "{{ now().hour }}"
+      current_hour_start_dt: "{{ now().replace(hour=now().hour, minute=0, second=0, microsecond=0) }}"
+      next_day_dt_midnight: "{{ (now() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0) }}"
+
+      tibber_raw_prices: "{{ state_attr(v_tibber_sensor, 'tibber_data') | default({'today': [], 'tomorrow': []}) }}"
+
+      combined_prices_with_time: >
+        {% set prices = [] %}
+        {% set today_prices = tibber_raw_prices.today | default([]) %}
+        {% set tomorrow_prices = tibber_raw_prices.tomorrow | default([]) %}
+        
+        {% for i in range(current_hour_int, 24) %}
+          {% if today_prices is not none and i < today_prices | length and today_prices[i].total is not none %}
+            {% set price_time = current_dt_now.replace(hour=i, minute=0, second=0, microsecond=0) %}
+            {% set success = prices.append({'time': price_time, 'price': today_prices[i].total}) %}
+          {% endif %}
+        {% endfor %}
+
+        {% for i in range(24) %}
+          {% if tomorrow_prices is not none and i < tomorrow_prices | length and tomorrow_prices[i].total is not none %}
+            {% set price_time = next_day_dt_midnight.replace(hour=i, minute=0, second=0, microsecond=0) %}
+            {% set success = prices.append({'time': price_time, 'price': tomorrow_prices[i].total}) %}
+          {% endif %}
+        {% endfor %}
+        {{ prices }}
+
+      cheapest_hours_info: >
+        {% set sorted_prices = combined_prices_with_time | sort(attribute='price') %}
+        {% set num_to_select = [ (charge_hours_input | int), sorted_prices | length] | min %} 
+        {{ sorted_prices[:num_to_select] }}
+
+      is_current_hour_cheap: >
+        {% set is_cheap = false %}
+        {% for hour_info in cheapest_hours_info %}
+          {% if hour_info.time == current_hour_start_dt %}
+            {% set is_cheap = true %}
+            {% break %}
+          {% endif %}
+        {% endfor %}
+        {{ is_cheap }}
+
+      formatted_cheapest_hours: >
+        {% set hours_list = [] %}
+        {% for hour_info in cheapest_hours_info %}
+          {% set success = hours_list.append(hour_info.time.astimezone(now().tzinfo).strftime('%H:%M')) %}
+        {% endfor %}
+        {{ hours_list | join(', ') if hours_list | length > 0 else 'N/A' }}
+
   # Schritt 1: Aktualisiere den Text-Helfer mit den günstigsten Stunden
-  - service: input_text.set_value
-    target:
-      entity_id: !input helper_cheapest_hours_text
+  - target:
+      entity_id: "{{ v_helper_cheapest_hours_text }}"
     data:
       value: "{{ formatted_cheapest_hours }}"
+    action: input_text.set_value
 
   # Schritt 2: Steuerung des Betriebsmodus (Laden oder Normalbetrieb)
   - choose:
@@ -218,27 +242,28 @@ action:
           - condition: template
             value_template: >
               {{ is_current_hour_cheap and
-                 batterie_soc < (input_number(input('soc_full_threshold')) | float(99)) and
+                 batterie_soc < (soc_full_threshold_input | float(99)) and
                  aktueller_modus != 'backup' and
                  (v_solar_forecast_sensor == 'none' or
                   states(v_solar_forecast_sensor) in ['unavailable', 'unknown', 'none', 'null', ''] or
-                  solar_forecast_value <= (input_number(input('pv_threshold_low')) | float(50)) or
-                  pv_leistung <= (input_number(input('pv_threshold_low')) | float(50))) }}
+                  solar_forecast_value <= (pv_threshold_low_input | float(50)) or
+                  pv_leistung <= (pv_threshold_low_input | float(50))) }}
         sequence:
-          - service: select.select_option
-            target:
-              entity_id: !input goodwe_work_mode_selector
+          - target:
+              entity_id: "{{ v_work_mode_selector }}"
             data:
               option: "backup"
+            action: select.select_option
           - if:
-              - "{{ export_limit_active }}"
+              - condition: template
+                value_template: "{{ export_limit_active }}"
             then:
-              - service: switch.turn_off
-                target:
-                  entity_id: !input goodwe_export_limit_switch
-          - service: input_boolean.turn_on
-            target:
-              entity_id: !input helper_charging_from_grid_toggle
+              - target:
+                  entity_id: "{{ v_export_limit_switch }}"
+                action: switch.turn_off
+          - target:
+              entity_id: "{{ v_helper_charging_from_grid_toggle }}"
+            action: input_boolean.turn_on
     
       - conditions:
           - condition: template
@@ -246,14 +271,20 @@ action:
               {{ not is_current_hour_cheap and
                  aktueller_modus != 'general' }}
         sequence:
-          - service: select.select_option
-            target:
-              entity_id: !input goodwe_work_mode_selector
+          - target:
+              entity_id: "{{ v_work_mode_selector }}"
             data:
-              option: "general"
-          - service: input_boolean.turn_off
-            target:
-              entity_id: !input helper_charging_from_grid_toggle
+              option: general
+            action: select.select_option
+          - target:
+              entity_id: "{{ v_helper_charging_from_grid_toggle }}"
+            action: input_boolean.turn_off
+      default:
+        - action: input_boolean.turn_off
+          metadata: {}
+          data: {}
+          target:
+            entity_id: "{{ v_helper_charging_from_grid_toggle }}"
     
   # Schritt 3: Steuerung der Exportsperre (unabhängig vom Modus-Wechsel)
   - choose: 
@@ -262,21 +293,27 @@ action:
             value_template: >
               {{ aktueller_modus == 'general' and
                  not export_limit_active and
-                 batterie_soc < (input_number(input('soc_full_threshold')) | float(99)) and
-                 pv_leistung <= (input_number(input('pv_threshold_low')) | float(50)) }}
+                 batterie_soc < (soc_full_threshold_input | float(99)) and
+                 pv_leistung <= (pv_threshold_low_input | float(50)) }}
         sequence:
-          - service: switch.turn_on
-            target:
-              entity_id: !input goodwe_export_limit_switch
+          - target:
+              entity_id: "{{ v_export_limit_switch }}"
+            action: switch.turn_on
 
       - conditions:
           - condition: template
             value_template: >
               {{ aktueller_modus == 'general' and
                  export_limit_active and
-                 (batterie_soc >= (input_number(input('soc_full_threshold')) | float(99)) or 
-                  pv_leistung > (input_number(input('pv_threshold_high')) | float(50))) }}
+                 (batterie_soc >= (soc_full_threshold_input | float(99)) or 
+                  pv_leistung > (pv_threshold_high_input | float(50))) }}
         sequence: 
-          - service: switch.turn_off
-            target:
-              entity_id: !input goodwe_export_limit_switch
+          - target:
+              entity_id: "{{ v_export_limit_switch }}"
+            action: switch.turn_off
+      default:
+        - action: switch.turn_off
+          metadata: {}
+          data: {}
+          target:
+            entity_id: "{{ v_export_limit_switch }}"
