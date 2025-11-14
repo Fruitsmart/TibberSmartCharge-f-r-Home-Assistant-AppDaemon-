@@ -1,5 +1,5 @@
 blueprint:
-  name: GoodWe & Tibber Smart Charge (v5.1 Fix)
+  name: GoodWe & Tibber Smart Charge (v5.3 Final Fix)
   description: |
     **Intelligente Batteriesteuerung für GoodWe Wechselrichter mit Tibber**
     
@@ -100,11 +100,11 @@ blueprint:
           min: 1
           max: 100
           unit_of_measurement: "%"
-    # NEUE HELFER INPUTS
     helper_cheapest_hours_text:
       name: Text-Helfer Günstige Stunden
       description: >
         Ein input_text-Helfer, der die günstigsten Ladestunden anzeigt.
+        Du musst diesen Helfer vorher in Home Assistant erstellen (Einstellungen > Geräte & Dienste > Helfer).
       selector:
         entity:
           domain: input_text
@@ -112,6 +112,7 @@ blueprint:
       name: Toggle-Helfer Akku lädt aus Netz
       description: >
         Ein input_boolean-Helfer, der anzeigt, ob der Akku gerade aus dem Netz geladen wird.
+        Du musst diesen Helfer vorher in Home Assistant erstellen (Einstellungen > Geräte & Dienste > Helfer).
       selector:
         entity:
           domain: input_boolean
@@ -122,7 +123,6 @@ max_exceeded: silent
 trigger:
   - platform: time_pattern
     minutes: "*"
-  # KORREKTUR HIER: platform: state statt platform: homeassistant
   - platform: state
     entity_id:
       - !input pv_power_sensor
@@ -133,7 +133,7 @@ trigger:
       - !input tibber_price_data_sensor
 
 variables:
-  # Inputs
+  # Inputs (direkt aus dem Blueprint übergeben)
   v_tibber_sensor: !input tibber_price_data_sensor
   v_pv_power_sensor: !input pv_power_sensor
   v_battery_soc_sensor: !input battery_soc_sensor
@@ -143,13 +143,7 @@ variables:
   v_helper_cheapest_hours_text: !input helper_cheapest_hours_text
   v_helper_charging_from_grid_toggle: !input helper_charging_from_grid_toggle
   
-  # Settings
-  v_charge_hours: "{{ iif(states(v_charge_hours) is defined and states(v_charge_hours) | is_number, states(v_charge_hours) | int, 3) }}"
-  v_pv_threshold_low: "{{ iif(states(v_pv_threshold_low) is defined and states(v_pv_threshold_low) | is_number, states(v_pv_threshold_low) | int, 50) }}"
-  v_pv_threshold_high: "{{ iif(states(v_pv_threshold_high) is defined and states(v_pv_threshold_high) | is_number, states(v_pv_threshold_high) | int, 50) }}"
-  v_soc_full_threshold: "{{ iif(states(v_soc_full_threshold) is defined and states(v_soc_full_threshold) | is_number, states(v_soc_full_threshold) | int, 99) }}"
-  
-  # States
+  # Aktuelle Status-Werte der Entitäten
   pv_leistung: "{{ states(v_pv_power_sensor) | float(0) }}"
   batterie_soc: "{{ states(v_battery_soc_sensor) | float(100) }}"
   aktueller_modus: "{{ states(v_work_mode_selector) }}"
@@ -194,7 +188,8 @@ variables:
 
   cheapest_hours_info: >
     {% set sorted_prices = combined_prices_with_time | sort(attribute='price') %}
-    {% set num_to_select = [v_charge_hours | int(3), sorted_prices | length] | min %}
+    {% set num_to_select = [ (states('input_number.' ~ (input('charge_hours') | string)) | int(3)), sorted_prices | length] | min %} 
+    {# KORREKTUR: Direkter Zugriff auf !input charge_hours über states() mit Default-Wert #}
     {{ sorted_prices[:num_to_select] }}
 
   is_current_hour_cheap: >
@@ -228,13 +223,16 @@ action:
       # 1. LADEN (Backup-Modus)
       - conditions:
           - "{{ is_current_hour_cheap }}"
-          - "{{ batterie_soc < v_soc_full_threshold }}"
+          - "{{ batterie_soc < (states('input_number.' ~ (input('soc_full_threshold') | string)) | float(99)) }}" 
+          {# KORREKTUR: Direkter Zugriff auf !input soc_full_threshold #}
           - "{{ aktueller_modus != 'backup' }}"
           - condition: or
             conditions:
-              - "{{ v_solar_forecast_sensor == 'none' }}"
-              - "{{ solar_forecast_value <= v_pv_threshold_low | float(50) }}"
-              - "{{ pv_leistung <= v_pv_threshold_low | float(50) }}"
+              - "{{ v_solar_forecast_sensor == 'none' or states(v_solar_forecast_sensor) in ['unavailable', 'unknown', 'none', 'null', ''] }}" # Zusätzliche Prüfung für Forecast
+              - "{{ solar_forecast_value <= (states('input_number.' ~ (input('pv_threshold_low') | string)) | float(50)) }}" 
+              {# KORREKTUR: Direkter Zugriff auf !input pv_threshold_low #}
+              - "{{ pv_leistung <= (states('input_number.' ~ (input('pv_threshold_low') | string)) | float(50)) }}"         
+              {# KORREKTUR: Direkter Zugriff auf !input pv_threshold_low #}
         sequence:
           - service: select.select_option
             target:
@@ -247,7 +245,6 @@ action:
               - service: switch.turn_off
                 target:
                   entity_id: !input goodwe_export_limit_switch
-          # Setze den Toggle-Helfer auf EIN
           - service: input_boolean.turn_on
             target:
               entity_id: !input helper_charging_from_grid_toggle
@@ -262,7 +259,6 @@ action:
               entity_id: !input goodwe_work_mode_selector
             data:
               option: "general"
-          # Setze den Toggle-Helfer auf AUS
           - service: input_boolean.turn_off
             target:
               entity_id: !input helper_charging_from_grid_toggle
@@ -273,8 +269,10 @@ action:
       - conditions:
           - "{{ aktueller_modus == 'general' }}"
           - "{{ not export_limit_active }}"
-          - "{{ batterie_soc < v_soc_full_threshold }}"
-          - "{{ pv_leistung <= v_pv_threshold_low | float(50) }}"
+          - "{{ batterie_soc < (states('input_number.' ~ (input('soc_full_threshold') | string)) | float(99)) }}" 
+          {# KORREKTUR: Direkter Zugriff auf !input soc_full_threshold #}
+          - "{{ pv_leistung <= (states('input_number.' ~ (input('pv_threshold_low') | string)) | float(50)) }}" 
+          {# KORREKTUR: Direkter Zugriff auf !input pv_threshold_low #}
         sequence:
           - service: switch.turn_on
             target:
@@ -286,9 +284,11 @@ action:
           - "{{ export_limit_active }}"
           - condition: or
             conditions:
-              - "{{ batterie_soc >= v_soc_full_threshold }}"
-              - "{{ pv_leistung > v_pv_threshold_high | float(50) }}"
-        sequence:
-          - service: switch.turn_off
-            target:
-              entity_id: !input goodwe_export_limit_switch
+              - "{{ batterie_soc >= (states('input_number.' ~ (input('soc_full_threshold') | string)) | float(99)) }}" 
+              {# KORREKTUR: Direkter Zugriff auf !input soc_full_threshold #}
+              - "{{ pv_leistung > (states('input_number.' ~ (input('pv_threshold_high') | string)) | float(50)) }}" 
+              {# KORREKTUR: Direkter Zugriff auf !input pv_threshold_high #}
+          sequence:
+            - service: switch.turn_off
+              target:
+                entity_id: !input goodwe_export_limit_switch
