@@ -1,0 +1,76 @@
+tibber_smart_charge:
+  module: tibber_smart_charge_app
+  class: TibberSmartCharge
+  
+  # --- 1. Hardware & Sensoren (Live-Daten) ---
+  tibber_price_sensor_id: sensor.electricity_price_prognose_15min_am_rottenbach_6
+  current_soc_sensor_id: sensor.battery_state_of_charge
+  goodwe_operation_mode_entity_id: select.inverter_operation_mode
+  
+  # --- PV PROGNOSE SENSOREN (TRIPLE FORECAST) ---
+  # 1. Prognose nächste Stunde (für "Aufwach"-Logik)
+  pv_forecast_sensor_id: sensor.energy_next_hour
+  # 2. Prognose aktuelle Stunde (für "Wolken"-Überbrückung)
+  pv_forecast_current_hour_sensor_id: sensor.energy_current_hour
+  # 3. Prognose restlicher Tag (für Ladebedarf-Berechnung)
+  pv_forecast_today_remaining_sensor_id: sensor.energy_production_today_remaining
+  # NEU: Sensor für die Zeit der PV-Spitze
+  pv_peak_time_sensor_id: sensor.power_highest_peak_time_today
+  
+  # Live Power Werte
+  current_pv_power_sensor_id: sensor.pv_power
+  battery_power_sensor_id: sensor.battery_power
+  grid_power_import_export_sensor_id: sensor.meter_active_power_total
+  
+  # Optional: Hausverbrauch (wird im Code geglättet)
+  current_house_consumption_w_id: sensor.house_consumption
+
+  # --- 2. Faktoren & Einstellungen (Feste Werte) ---
+  battery_efficiency_factor: 0.90
+  pv_forecast_safety_factor: 0.50
+  # Min Spread: Differenz zwischen JETZT und SPÄTEREM Peak
+  min_price_spread_eur: 0.04            
+  min_cycle_profit_eur: 0.02
+
+  # --- 3. Konfigurations-Helfer (Steuerung) ---
+  charge_intervals_input_id: input_number.anzahl_guenstigste_ladestunden
+  
+  battery_capacity_kwh_id: input_number.batteriekapazitaet_kwh
+  charger_power_kw_id: input_number.ladeleistung_kw
+  ladeziel_soc_prozent_id: input_number.ladeziel_soc_prozent
+  
+  # Schwellwerte
+  tibber_discharge_threshold_eur_per_kwh_id: input_number.tibber_entladeschwelle_eur_per_kwh
+  
+  # WICHTIG: Hier muss die Hardware-Entität stehen (z.B. DoD 80% = MinSoC 20%)
+  min_soc_for_discharge_prozent_id: number.depth_of_discharge_on_grid
+  
+  pv_forecast_threshold_kw_id: input_number.pv_prognose_ladeschwelle_kw
+  current_pv_threshold_w_id: input_number.aktuelle_pv_ladeschwelle_w
+  referenz_strompreis_id: input_number.referenz_strompreis_ohne_optimierung_eur_per_kwh
+  
+  # --- 4. Status & Tracking Helfer (Datenspeicher) ---
+  dashboard_status_text_id: input_text.tibber_smart_charge_status
+  app_enabled_switch_id: input_boolean.tibber_smart_charge_app_aktiv
+  cheap_hour_toggle_id: input_boolean.tibber_guenstige_ladestunde
+  next_charge_time_id: input_text.tibber_next_charge_time
+  cheap_hours_text_id: input_text.gunstigsten_ladestunden
+  monatsbericht_id: input_text.tibber_smart_charge_monatsbericht
+
+  # Tracking (Statistiken)
+  kosten_monat_id: input_number.tibber_smart_charge_kosten_monat
+  ersparnis_monat_id: input_number.tibber_smart_charge_ersparnis_monat
+  discharge_ersparnis_monat_id: input_number.tibber_smart_discharge_ersparnis_monat
+  geladene_kwh_monat_id: input_number.tibber_smart_charge_geladene_kwh_monat
+  pv_savings_monat_id: input_number.tibber_smart_pv_savings_monat
+  
+  kosten_gesamt_id: input_number.tibber_smart_charge_kosten_gesamt
+  ersparnis_gesamt_id: input_number.tibber_charge_ersparnis_lifetime_final
+  discharge_ersparnis_gesamt_id: input_number.tibber_smart_discharge_ersparnis_gesamt
+  geladene_kwh_gesamt_id: input_number.tibber_smart_charge_geladene_kwh_gesamt
+  pv_savings_gesamt_id: input_number.tibber_smart_pv_savings_gesamt
+
+  # --- 5. Debugging ---
+  # Auf 'true' setzen, um die Logik (Preise, Slots, Modus-Checks) im Log zu sehen
+  debug_mode: false
+  log_debug_level: true
