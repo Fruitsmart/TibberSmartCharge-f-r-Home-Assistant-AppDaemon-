@@ -21,7 +21,7 @@ Dieses AppDaemon-Skript verwandelt deinen Heimspeicher in einen intelligenten St
 
 1.  **Home Assistant** (installiert und laufend).
 2.  **AppDaemon** Add-on in Home Assistant.
-3.  **Tibber Integration** (für die Strompreise).
+3.  **Tibber API Token** (erhältlich auf https://www.google.com/search?q=developer.tibber.com).
 4.  **Wechselrichter Integration** (getestet mit GoodWe, benötigt Entitäten zum Umschalten des Betriebsmodus).
 5.  **Solar Forecast** (z.B. Solcast oder Forecast.Solar) für die Sensoren.
 
@@ -29,15 +29,44 @@ Dieses AppDaemon-Skript verwandelt deinen Heimspeicher in einen intelligenten St
 
 ## 🚀 Installation
 
-### 1\. AppDaemon einrichten
+### 1\. WICHTIG: Tibber REST-Sensor anlegen
+
+Damit das Skript die Preise für den ganzen Tag und morgen im Voraus kennt, reicht der normale Tibber-Sensor oft nicht aus. Du musst einen **REST Sensor** in deiner `configuration.yaml` anlegen, der die Daten direkt von der Tibber API holt.
+
+Füge dies in deine `configuration.yaml` ein (ersetze `DEIN_TIBBER_TOKEN` mit deinem echten Token):
+
+```yaml
+sensor:
+  - platform: rest
+    name: Tibber Preise Vorhersage (REST)
+    resource: https://api.tibber.com/v1-beta/gql
+    method: POST
+    scan_interval: 300 # Alle 5 Minuten aktualisieren
+    headers:
+      Authorization: "Bearer DEIN_TIBBER_TOKEN"
+      Content-Type: application/json
+    payload: >-
+      {
+        "query": "{ viewer { homes { currentSubscription { priceInfo { today { total startsAt } tomorrow { total startsAt } } } } } }"
+      }
+    json_attributes_path: "$.data.viewer.homes[0].currentSubscription.priceInfo"
+    value_template: "{{ value_json.today[0].total }}" 
+    json_attributes:
+      - today
+      - tomorrow
+```
+
+*Starte Home Assistant nach dem Einfügen neu.*
+
+### 2\. AppDaemon einrichten
 
 Falls noch nicht geschehen, installiere das "AppDaemon" Add-on aus dem Home Assistant Store.
 
-### 2\. Code kopieren
+### 3\. Code kopieren
 
 Erstelle eine Datei namens `tibber_smart_charge.py` im Verzeichnis `/config/appdaemon/apps/` und füge den Python-Code dort ein.
 
-### 3\. Helfer erstellen (Input Helper)
+### 4\. Helfer erstellen (Input Helper)
 
 Damit das Skript konfigurierbar ist, musst du in Home Assistant unter **Einstellungen -\> Geräte & Dienste -\> Helfer** folgende Entitäten erstellen:
 
@@ -53,9 +82,9 @@ Damit das Skript konfigurierbar ist, musst du in Home Assistant unter **Einstell
 
 *(Zusätzlich benötigst du Helfer für die Statistik-Zahlen, siehe `apps.yaml` Konfiguration)*
 
-### 4\. Konfiguration (apps.yaml)
+### 5\. Konfiguration (apps.yaml)
 
-Öffne die Datei `/config/appdaemon/apps/apps.yaml` und füge folgenden Block ein. **Passe die Sensor-Namen an deine Umgebung an\!**
+Öffne die Datei `/config/appdaemon/apps/apps.yaml` und füge folgenden Block ein. **Verweise bei `tibber_price_sensor_id` auf den oben erstellten REST-Sensor\!**
 
 ```yaml
 tibber_smart_charge:
@@ -63,7 +92,7 @@ tibber_smart_charge:
   class: TibberSmartCharge
   
   # --- Live Sensoren ---
-  tibber_price_sensor_id: sensor.electricity_price_zuhause # Dein Tibber Preis Sensor
+  tibber_price_sensor_id: sensor.tibber_preise_vorhersage_rest # Dein neuer REST Sensor
   current_soc_sensor_id: sensor.battery_state_of_charge
   goodwe_operation_mode_entity_id: select.inverter_operation_mode
   
@@ -154,7 +183,7 @@ Um den nächsten PV-Peak und den Strompreis im Dashboard korrekt anzuzeigen (auc
 type: markdown
 content: >-
   {# --- PEAK BERECHNUNG --- #}
-  {% set sensor_id = 'sensor.electricity_price_DEIN_SENSOR' %}
+  {% set sensor_id = 'sensor.tibber_preise_vorhersage_rest' %}
   {% set prices = state_attr(sensor_id, 'today') %}
   {% set start_ts = as_timestamp(today_at("00:00")) %}
   {% set ns = namespace(max=0, time='-') %}
