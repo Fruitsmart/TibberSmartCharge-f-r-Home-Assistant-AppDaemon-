@@ -64,7 +64,7 @@ Falls noch nicht geschehen, installiere das "AppDaemon" Add-on aus dem Home Assi
 
 ### 3\. Code kopieren
 
-Erstelle eine Datei namens `tibber_smart_charge.py` im Verzeichnis `/config/appdaemon/apps/` und füge den Python-Code dort ein.
+Erstelle eine Datei namens `tibber_smart_charge.py` im Verzeichnis `/addon_configs/a0d7b954_appdaemon/apps/` und füge den Python-Code dort ein.
 
 ### 4\. Helfer erstellen (Input Helper)
 
