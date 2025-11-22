@@ -6,7 +6,8 @@ import math
 class TibberSmartCharge(hass.Hass):
 
     def initialize(self):
-        self.log("Initializing TibberSmartCharge App - Version 100b (Bugfix & Heartbeat)...", level="INFO")
+        # --- VERSION 1.0b ---
+        self.log("Initializing TibberSmartCharge App - Version 1.0b (Stable Release)...", level="INFO")
 
         # --- 1. KONFIGURATION: IDs ---
         self.tibber_price_sensor_id = self.args['tibber_price_sensor_id']
@@ -275,7 +276,7 @@ class TibberSmartCharge(hass.Hass):
         pv_forecast_next_hour_kw = self._get_float_state(self.pv_forecast_next_hour_id, default=0.0)
         pv_forecast_current_hour_kw = self._get_float_state(self.pv_forecast_current_hour_id, default=0.0)
         
-        # FIX V100b: Variable VORHER initialisieren!
+        # FIX: Variable VORHER initialisieren!
         pv_peak_time_dt = None
         
         # Peak Time Parsing (ISO)
@@ -432,7 +433,7 @@ class TibberSmartCharge(hass.Hass):
             is_relative_dip = (current_spread >= self.min_price_spread_eur)
             if current_time_in_best_block or is_panic_mode: allowed_to_charge = True
             else: allowed_to_charge = (current_tibber_price <= tibber_entladeschwelle_eur_per_kwh) or is_relative_dip
-                
+            
             if allowed_to_charge:
                 status_msg = f"Laden aktiv: {cheap_hours_info}"
                 self.set_state(self.dashboard_status_text_id, state=status_msg)
