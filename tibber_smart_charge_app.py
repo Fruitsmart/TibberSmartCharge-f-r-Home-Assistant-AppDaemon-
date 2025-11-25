@@ -6,7 +6,7 @@ import math
 class SmartPriceCharge(hass.Hass):
 
     def initialize(self):
-        self.log("Initializing TibberSmartCharge App - Version 1.1b (Configurable Dynamic Spread)...", level="INFO")
+        self.log("Initializing SmartPriceCharge App - Version 1.1b (Configurable Dynamic Spread)...", level="INFO")
 
         # --- 1. KONFIGURATION: IDs ---
         self.tibber_price_sensor_id = self.args['tibber_price_sensor_id']
@@ -535,4 +535,5 @@ class SmartPriceCharge(hass.Hass):
     def terminate(self):
         self.log("INFO: App beendet.", level="INFO")
         self.turn_off(self.cheap_hour_toggle_id)
+
 
