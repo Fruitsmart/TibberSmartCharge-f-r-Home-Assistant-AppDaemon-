@@ -3,7 +3,7 @@ import appdaemon.plugins.hass.hassapi as hass
 from datetime import datetime, timedelta, time
 import math
 
-class TibberSmartCharge(hass.Hass):
+class SmartPriceCharge(hass.Hass):
 
     def initialize(self):
         self.log("Initializing TibberSmartCharge App - Version 1.1b (Configurable Dynamic Spread)...", level="INFO")
@@ -535,3 +535,4 @@ class TibberSmartCharge(hass.Hass):
     def terminate(self):
         self.log("INFO: App beendet.", level="INFO")
         self.turn_off(self.cheap_hour_toggle_id)
+
