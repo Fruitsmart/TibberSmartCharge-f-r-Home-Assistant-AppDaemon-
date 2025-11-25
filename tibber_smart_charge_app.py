@@ -6,8 +6,7 @@ import math
 class TibberSmartCharge(hass.Hass):
 
     def initialize(self):
-        # --- VERSION 1.0b ---
-        self.log("Initializing TibberSmartCharge App - Version 1.0b (Stable Release)...", level="INFO")
+        self.log("Initializing TibberSmartCharge App - Version 102 (Fully Configurable Dynamic Spread)...", level="INFO")
 
         # --- 1. KONFIGURATION: IDs ---
         self.tibber_price_sensor_id = self.args['tibber_price_sensor_id']
@@ -37,11 +36,22 @@ class TibberSmartCharge(hass.Hass):
         self.referenz_strompreis_id = self.args['referenz_strompreis_id']
         self.charge_intervals_input_id = self.args.get('charge_intervals_input_id', 'input_number.anzahl_guenstigste_ladestunden')
 
-        # Faktoren
+        # --- FAKTOREN & EINSTELLUNGEN ---
         self.pv_forecast_safety_factor = float(self.args.get('pv_forecast_safety_factor', 0.50))
-        self.min_price_spread_eur = float(self.args.get('min_price_spread_eur', 0.08))
         self.min_cycle_profit_eur = float(self.args.get('min_cycle_profit_eur', 0.02))
         self.efficiency_factor = float(self.args.get('battery_efficiency_factor', 0.90))
+
+        # DYNAMIC SPREAD KONFIGURATION (Neu in V102)
+        # Basis Spread (für SoC < Medium)
+        self.base_min_price_spread_eur = float(self.args.get('min_price_spread_eur', 0.08))
+        
+        # Medium SoC Stufe (Standard: ab 80% SoC -> 0.15€ Spread)
+        self.soc_threshold_medium = float(self.args.get('soc_threshold_medium', 80.0))
+        self.spread_medium_soc_eur = float(self.args.get('spread_medium_soc_eur', 0.15))
+        
+        # High SoC Stufe (Standard: ab 95% SoC -> 0.25€ Spread)
+        self.soc_threshold_high = float(self.args.get('soc_threshold_high', 95.0))
+        self.spread_high_soc_eur = float(self.args.get('spread_high_soc_eur', 0.25))
         
         # Modi
         self.goodwe_charge_mode_option = self.args.get('goodwe_charge_mode_option', 'eco_charge')
@@ -77,8 +87,6 @@ class TibberSmartCharge(hass.Hass):
         self.charging_session_start_time = None
         self.charging_session_net_charged_kwh = 0.0
         self.discharging_active = False
-        
-        # Variable für Safety Heartbeat
         self.last_inverter_mode_command_time = None
         
         if not all([self.tibber_price_sensor_id, self.current_soc_sensor_id, self.goodwe_operation_mode_entity_id]):
@@ -121,25 +129,15 @@ class TibberSmartCharge(hass.Hass):
         self.turn_off(self.cheap_hour_toggle_id)
 
     def _set_inverter_mode(self, target_mode):
-        """ 
-        Setzt den Modus intelligent:
-        1. Wenn Modus falsch -> Senden.
-        2. Wenn Modus richtig, aber letztes Senden > 15 Min -> Senden (Heartbeat).
-        3. Sonst -> Nichts tun.
-        """
         current_mode = self.get_state(self.goodwe_operation_mode_entity_id)
         now = self.get_now()
         
-        # Check, ob wir einen Heartbeat brauchen (alle 15 Min erzwingen)
         needs_heartbeat = False
         if self.last_inverter_mode_command_time:
             diff = (now - self.last_inverter_mode_command_time).total_seconds() / 60
-            if diff > 15:
-                needs_heartbeat = True
-        else:
-            needs_heartbeat = True # Erster Aufruf
+            if diff > 15: needs_heartbeat = True
+        else: needs_heartbeat = True 
             
-        # Logik Entscheidung
         should_send = False
         reason = ""
 
@@ -148,7 +146,7 @@ class TibberSmartCharge(hass.Hass):
             reason = "Modus-Änderung nötig"
         elif needs_heartbeat:
             should_send = True
-            reason = "Safety Heartbeat (15min Sync)"
+            reason = "Safety Heartbeat"
         
         if should_send:
             if not self.debug_mode:
@@ -156,12 +154,9 @@ class TibberSmartCharge(hass.Hass):
                 self.call_service("select/select_option", entity_id=self.goodwe_operation_mode_entity_id, option=target_mode)
             else:
                 self.log(f"DEBUG-MODE: Würde '{target_mode}' senden ({reason}).", level="INFO")
-            
-            # Zeitstempel merken
             self.last_inverter_mode_command_time = now
-            
         else:
-            self._log_debug(f"Smart-Mode: Modus '{target_mode}' passt (Letzter Sync vor <15min).", level="DEBUG")
+            self._log_debug(f"Smart-Mode: Modus '{target_mode}' passt (Sync OK).", level="DEBUG")
 
     # --- TRACKING FUNKTIONEN ---
     def _update_charge_cost_stats(self, net_charged_kwh, avg_charge_price):
@@ -276,17 +271,14 @@ class TibberSmartCharge(hass.Hass):
         pv_forecast_next_hour_kw = self._get_float_state(self.pv_forecast_next_hour_id, default=0.0)
         pv_forecast_current_hour_kw = self._get_float_state(self.pv_forecast_current_hour_id, default=0.0)
         
-        # FIX: Variable VORHER initialisieren!
         pv_peak_time_dt = None
-        
-        # Peak Time Parsing (ISO)
         if self.pv_peak_time_sensor_id:
             state_str = self.get_state(self.pv_peak_time_sensor_id)
             if state_str and state_str not in ['unavailable', 'unknown']:
                 try: pv_peak_time_dt = datetime.fromisoformat(state_str)
                 except: pass
         
-        self._log_debug(f"SoC:{current_soc_prozent:.1f}% | PV:{current_pv_power_w:.0f}W | FC-Now:{pv_forecast_current_hour_kw:.2f} | FC-Next:{pv_forecast_next_hour_kw:.2f}", level="DEBUG")
+        self._log_debug(f"SoC:{current_soc_prozent:.1f}% | PV:{current_pv_power_w:.0f}W | FC-Now:{pv_forecast_current_hour_kw:.2f}", level="DEBUG")
 
         # --- PREIS DATEN ---
         today_prices_raw = self.get_state(self.tibber_price_sensor_id, attribute='today')
@@ -318,7 +310,7 @@ class TibberSmartCharge(hass.Hass):
              self._set_error_states('N/A - Keine Intervalle')
              return
         
-        # --- PREISANALYSE ---
+        # --- PREISANALYSE (Dynamischer Spread V102) ---
         max_future_price = 0.0
         peak_time_dt = None
         if all_15min_prices:
@@ -329,6 +321,19 @@ class TibberSmartCharge(hass.Hass):
         current_tibber_price = all_15min_prices[0]['price'] if all_15min_prices else 0.0
         current_spread = max_future_price - current_tibber_price
         
+        # DYNAMIC SPREAD LOGIK (Konfigurierbar)
+        effective_min_spread = self.base_min_price_spread_eur
+        
+        if current_soc_prozent > self.soc_threshold_high:
+            # Sehr voller Akku -> Sehr locker
+            effective_min_spread = max(effective_min_spread, self.spread_high_soc_eur)
+            self._log_debug(f"DynSpread: SoC > {self.soc_threshold_high}% -> Spread {effective_min_spread:.2f}", level="DEBUG")
+            
+        elif current_soc_prozent > self.soc_threshold_medium:
+            # Voller Akku -> Lockerer
+            effective_min_spread = max(effective_min_spread, self.spread_medium_soc_eur)
+            self._log_debug(f"DynSpread: SoC > {self.soc_threshold_medium}% -> Spread {effective_min_spread:.2f}", level="DEBUG")
+        
         min_interim_price = 9.99
         interim_dip_found = False
         if peak_time_dt and peak_time_dt > now_dt:
@@ -338,8 +343,12 @@ class TibberSmartCharge(hass.Hass):
              refill_profit = current_tibber_price - (min_interim_price / self.efficiency_factor)
              if refill_profit > self.min_cycle_profit_eur: interim_dip_found = True
 
-        should_hold_for_peak = (current_spread >= self.min_price_spread_eur) and (not interim_dip_found)
+        # Nutzung des effektiven Spreads
+        should_hold_for_peak = (current_spread >= effective_min_spread) and (not interim_dip_found)
         
+        if should_hold_for_peak:
+             self._log_debug(f"Hold aktiv! Spread {current_spread:.3f} >= {effective_min_spread:.3f}", level="DEBUG")
+
         # --- BEDARFS-BERECHNUNG ---
         deadline_dt = peak_time_dt if max_future_price > tibber_entladeschwelle_eur_per_kwh else datetime.combine(today_date, time(23, 59))
         is_morning_peak = deadline_dt.hour < 10
@@ -430,7 +439,7 @@ class TibberSmartCharge(hass.Hass):
 
         # PRIO 2: GÜNSTIG LADEN
         elif app_is_enabled and current_soc_prozent < ladeziel_soc_prozent and (current_time_in_best_block or is_panic_mode):
-            is_relative_dip = (current_spread >= self.min_price_spread_eur)
+            is_relative_dip = (current_spread >= self.base_min_price_spread_eur) # Hier gilt immer Basis
             if current_time_in_best_block or is_panic_mode: allowed_to_charge = True
             else: allowed_to_charge = (current_tibber_price <= tibber_entladeschwelle_eur_per_kwh) or is_relative_dip
             
@@ -454,7 +463,7 @@ class TibberSmartCharge(hass.Hass):
             elif current_goodwe_mode != self.goodwe_charge_mode_option:
                 self._set_inverter_mode(self.goodwe_general_mode_option)
 
-        # PRIO 4: IDLE / HOLD (mit ISO PEAK-ZEIT Logik)
+        # PRIO 4: IDLE / HOLD
         elif not is_pv_charge_active and not charge_toggle_on and not is_discharge_active:
             is_approaching_peak = False
             if pv_peak_time_dt:
