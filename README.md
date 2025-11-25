@@ -1,4 +1,4 @@
-# 🔋 TibberSmartCharge für Home Assistant (AppDaemon)
+# 🔋 SmartPriceCharge für Home Assistant (AppDaemon)
 
 **Intelligente Batteriesteuerung für dynamische Strompreise (Tibber) & PV-Überschuss – Optimiert für Nulleinspeisung/Eigenverbrauch.**
 
